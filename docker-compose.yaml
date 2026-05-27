@@ -1,0 +1,84 @@
+version: '3.8'
+
+networks:
+  veloz-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: veloz-db
+    environment:
+      POSTGRES_DB: pedidos_db
+      POSTGRES_USER: veloz_user
+      POSTGRES_PASSWORD: SecretPassword123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - veloz-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U veloz_user -d pedidos_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: veloz-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - PEDIDOS_SERVICE_URL=http://pedidos-service:3001
+      - PAGAMENTOS_SERVICE_URL=http://pagamentos-service:3002
+      - ESTOQUE_SERVICE_URL=http://estoque-service:3003
+    networks:
+      - veloz-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  pedidos-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: veloz-pedidos
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=pedidos_db
+      - DB_USER=veloz_user
+      - DB_PASS=SecretPassword123
+    networks:
+      - veloz-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  pagamentos-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: veloz-pagamentos
+    networks:
+      - veloz-net
+
+  estoque-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: veloz-estoque
+    environment:
+      - DB_HOST=postgres
+    networks:
+      - veloz-net
+    depends_on:
+      postgres:
+        condition: service_healthy
